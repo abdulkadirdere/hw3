@@ -4,6 +4,15 @@
  * Stub implementations of the mm_* routines. Remove this comment and provide
  * a summary of your allocator's design here.
  */
+ 
+/* malloc(3) is a Standard C Library function that allocates (reserves) memory chunks. It complies with the following rules:
+  • malloc allocates at least the number of bytes requested;
+  • The pointer returned by malloc points to an allocated space (a space where the program can read or write successfully)
+  • No other call to malloc will allocate this space or any portion of it, unless the pointer has been freed before.
+  • malloc should be tractable: malloc must terminate in as soon as possible
+  • malloc should also provide resizing and freeing. */
+ 
+/* Prior to write a first malloc, we need to understand how memory is managed in most multitask systems. We will keep an abstract point of view for that part, since many details are system and hardware dependant. */
 
 #include "mm_alloc.h"
 
@@ -14,13 +23,14 @@
 /* Your final implementation should comment out this macro. */
 //#define MM_USE_STUBS
 #define ASSERT     assert
-#define align4(x)  (((((x)-1)>>2)<<2)+4)
+#define align4(x)  (((((x)-1)>>2)<<2)+4) //right and left bit-shift are used for dividing and multiplying because they are faster that normal one
 
 // Global variables
 s_block_ptr base = NULL; // beginning point of heap            
 s_block_ptr last;        // last visited block    
 
 // Traverse the chunks list and stop when find a free block with enough space
+// only trick is to keep the last visited chunk so malloc can easily extend the heap if we found no fitting chunk 
 static s_block_ptr find_block(size_t size)   
 {  
   s_block_ptr p = base;
@@ -33,10 +43,16 @@ static s_block_ptr find_block(size_t size)
   return NULL;                             
 }
 
+/* The heap is a continuous (in terme of virtual adresses) space of memory with three bounds:a starting point, a maximum limit (managed through sys/ressource.h’s functions getrlimit(2) and setrlimit(2)) and an end point called the break. The break marks the end of the mapped
+memory space, that is, the part of the virtual adress space that has correspondance into real memory. */
+
 //extend the break point
 /* Add a new block at the of heap,
  * return NULL if things go wrong
  */
+ 
+/* In order to code a malloc, we need to know where the heap begin and the break position, and of course we need to be able to move the break. This the purpose of the two syscalls brk and sbrk. */
+//we extend the heap when we don't find a fitting chunk
 static s_block_ptr extend_heap (size_t size)                 
 {    
     // Current break is address of the new block                      
@@ -64,6 +80,7 @@ static s_block_ptr extend_heap (size_t size)
 }
 
 /* Split block according to size, p must exist */
+//We split blocks when we found a chuck that can held a size asked plus a new chunk (at least BLOCKSIZE + 4) so we don't lose space
 static s_block_ptr split_block(s_block_ptr p, size_t new_size)
 {
     s_block_ptr new_block = NULL;              
@@ -90,6 +107,8 @@ static s_block_ptr split_block(s_block_ptr p, size_t new_size)
 }
 
 /* Try fusing block with neighbors */
+/* Fusion: if next chunk is free we sum the sizes of current and next chunk plus meta-data.
+   Then we make next to point our successor's successor, if it exist we update predecessor. */
 static s_block_ptr fusion_block(s_block_ptr pb)
 {
     ASSERT(pb->free == TRUE); 
@@ -116,6 +135,7 @@ static s_block_ptr get_block(void *p)
     return (s_block_ptr)(tmp - BLOCK_SIZE);
 }
 
+//to see if it is the correct block address 
 static int is_valid_block_addr (void *p)
 {
    s_block_ptr pb = get_block(p);
@@ -141,12 +161,23 @@ static void copy_block(s_block_ptr src, s_block_ptr dst)
 
 
 //---------------------------Main Function-----------------------------------------
+/* Our malloc follow these lines:
+ •First align the requested size
+ •If base is initialized:
+ 	–Search for a free chunk wide enough
+ 	–If we found a chunk:
+ 		* Try to split the block (the difference between the requested size and the size of the block is enough to store the 			  meta-data and a minimal block (4 bytes)
+ 		* Mark the chunk as used (b->free=0)
+ 	–Otherwise: we extend the heap.
+ •Otherwise: we extended the heap (which is empty at that point.)
+*/
+
 void* mm_malloc(size_t size)
 {
 #ifdef MM_USE_STUBS
     return calloc(1, size);
 #else
- 	// Align the requested size
+    // Align the requested size
     size_t s = align4(size);    
     s_block_ptr pb;
 
@@ -181,6 +212,7 @@ void* mm_malloc(size_t size)
     #endif
 }
 
+/*Realloc is basically memory copy operation. Function may move the memory block to new location if there isn't enough memory. */
 void* mm_realloc(void* ptr, size_t size)
 {
 #ifdef MM_USE_STUBS
@@ -233,7 +265,8 @@ size_t s;
     return (NULL);
     #endif
 }
-
+/*Free: we verify if the pointer is obtained by malloc, get the corresponding chunk, we mark if free and fusion it if possible 
+We also try to release memory if we are at the end of the heap. */
 void mm_free(void* ptr)
 {
 #ifdef MM_USE_STUBS

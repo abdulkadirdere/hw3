@@ -3,7 +3,6 @@
  *
  * Exports a clone of the interface documented in "man 3 malloc".
  */
-
 #pragma once
 
 #ifndef _malloc_H_
@@ -26,6 +25,7 @@ void mm_free(void* ptr);
 typedef struct s_block *s_block_ptr;
 
 /* block struct */
+/* creating a linklist of pointers so they can have a pointer that points to the next data block's address snd previous one's, size of it and whether it is free or not */
 struct s_block {
     size_t size;
     struct s_block *next;
